@@ -423,7 +423,20 @@ async function extractDirectStream(url) {
             const html = await response.text();
 
             // Find internal host iframe (usually behind the fake-player-overlay)
-            const iframeMatch = html.match(/<iframe[^>]+src="([^"]+)"/i);
+            const $ = cheerio.load(html);
+
+const iframeMatch = $('iframe[src]')
+    .map((i, el) => $(el).attr('src'))
+    .get()
+    .find(src =>
+        src &&
+        /short\.icu|as-cdn21\.top|abyss\.to|gdmirrorbot\.nl/i.test(src)
+    );
+
+if (iframeMatch) {
+    finalUrl = new URL(iframeMatch, finalUrl).href;
+    console.log(`[ToonHub] Found video host: ${finalUrl}`);
+}
             if (iframeMatch && iframeMatch[1]) {
                 finalUrl = iframeMatch[1].replace(/&#038;/g, '&');
                 console.log(`[ToonHub] Found internal host: ${finalUrl}`);
