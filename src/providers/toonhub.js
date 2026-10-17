@@ -1,6 +1,6 @@
 /**
  * toonhub - Built from src/toonhub/
- * Generated: 2026-10-17T11:52:22.187Z
+ * Generated: 2026-10-17T14:59:46.358Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -291,8 +291,8 @@ function searchToonHub(query) {
         const response = yield fetchWithTimeout(searchUrl, { headers: HEADERS }, 8e3);
         if (!response.ok)
           continue;
-        const html = yield response.text();
-        const $ = cheerio.load(html);
+        const html2 = yield response.text();
+        const $ = cheerio.load(html2);
         const results = [];
         $("li.post-item").each((i, el) => {
           const a = $(el).find("h2.post-title a");
@@ -322,8 +322,8 @@ function searchToonStream(query) {
       const response = yield fetchWithTimeout(searchUrl, { headers: HEADERS }, 1e4);
       if (!response.ok)
         return [];
-      const html = yield response.text();
-      const $ = cheerio.load(html);
+      const html2 = yield response.text();
+      const $ = cheerio.load(html2);
       const results = [];
       $("article.post").each((i, el) => {
         const a = $(el).find("a.lnk-blk");
@@ -359,8 +359,8 @@ function getToonStreamEpisodes(seriesUrl, episodeNumber) {
       );
       if (!response.ok)
         return null;
-      const html = yield response.text();
-      const $ = cheerio.load(html);
+      const html2 = yield response.text();
+      const $ = cheerio.load(html2);
       const targetEpisode = Number(episodeNumber);
       if (!Number.isInteger(targetEpisode) || targetEpisode < 1) {
         return null;
@@ -406,29 +406,20 @@ function extractDirectStream(url) {
       if (finalUrl.includes("toonstream.") && finalUrl.includes("/episode/")) {
         console.log(`[ToonHub] Resolving ToonStream episode page: ${finalUrl}`);
         const response = yield fetchWithTimeout(finalUrl, { headers: HEADERS }, 1e4);
-        const html = yield response.text();
-        const trembedMatch = html.match(/https?:\/\/toonstream\.[^/]+\/home\/\?trembed=[^"']+/i);
+        const html2 = yield response.text();
+        const trembedMatch = html2.match(/https?:\/\/toonstream\.[^/]+\/home\/\?trembed=[^"']+/i);
         if (trembedMatch) {
           finalUrl = trembedMatch[0].replace(/&#038;/g, "&");
           console.log(`[ToonHub] Found Embed URL: ${finalUrl}`);
         }
       }
-      if (finalUrl.includes("toonstream.") && finalUrl.includes("/home/")) {
-        console.log(`[ToonHub] Resolving ToonStream embed: ${finalUrl}`);
-        const response = yield fetchWithTimeout(finalUrl, { headers: HEADERS }, 1e4);
-        const html = yield response.text();
-        const $ = cheerio.load(html);
-        const iframeMatch = $("iframe[src]").map((i, el) => $(el).attr("src")).get().find(
-          (src) => src && /short\.icu|as-cdn21\.top|abyss\.to|gdmirrorbot\.nl/i.test(src)
-        );
-        if (iframeMatch) {
-          finalUrl = new URL(iframeMatch, finalUrl).href;
-          console.log(`[ToonHub] Found video host: ${finalUrl}`);
-        }
-        if (iframeMatch && iframeMatch[1]) {
-          finalUrl = iframeMatch[1].replace(/&#038;/g, "&");
-          console.log(`[ToonHub] Found internal host: ${finalUrl}`);
-        }
+      const $ = cheerio.load(html);
+      const iframeMatch = $("iframe[src]").map((i, el) => $(el).attr("src")).get().find(
+        (src) => src && /short\.icu|as-cdn21\.top|abyss\.to|gdmirrorbot\.nl/i.test(src)
+      );
+      if (iframeMatch) {
+        finalUrl = new URL(iframeMatch, finalUrl).href;
+        console.log(`[ToonHub] Found video host: ${finalUrl}`);
       }
       if (finalUrl.includes("short.icu") || finalUrl.includes("as-cdn21.top") || finalUrl.includes("abyss.to")) {
         console.log(`[ToonHub] Extracting via Host API: ${finalUrl}`);
@@ -461,11 +452,11 @@ function extractDirectStream(url) {
         }
         const hostHeaders = __spreadProps(__spreadValues({}, HEADERS), { "Referer": "https://toonstream.one/" });
         const response = yield fetchWithTimeout(finalUrl, { headers: hostHeaders }, 1e4);
-        const html = yield response.text();
-        const m3u8Match = html.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/i);
+        const html2 = yield response.text();
+        const m3u8Match = html2.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/i);
         if (m3u8Match)
           return m3u8Match[0].replace(/&#038;/g, "&");
-        const mp4Match = html.match(/https?:\/\/[^\s"']+\.mp4[^\s"']*/i);
+        const mp4Match = html2.match(/https?:\/\/[^\s"']+\.mp4[^\s"']*/i);
         if (mp4Match)
           return mp4Match[0].replace(/&#038;/g, "&");
       }
@@ -477,8 +468,8 @@ function extractDirectStream(url) {
               "Referer": "https://toonhub4u.co/"
             })
           }, 1e4);
-          const html = yield response.text();
-          const fileurlMatch = html.match(/const\s+fileurl\s*=\s*"([^"]+)"/);
+          const html2 = yield response.text();
+          const fileurlMatch = html2.match(/const\s+fileurl\s*=\s*"([^"]+)"/);
           if (fileurlMatch && fileurlMatch[1]) {
             const directUrl = fileurlMatch[1].replace(/\\/g, "");
             console.log(`[ToonHub] Found direct URL from gdmirrorbot: ${directUrl}`);
@@ -491,11 +482,11 @@ function extractDirectStream(url) {
       if (finalUrl.includes("/file/") || finalUrl.includes("/embed/")) {
         let embedUrl = finalUrl.replace("/file/", "/embed/");
         const response = yield fetchWithTimeout(embedUrl, { headers: __spreadProps(__spreadValues({}, HEADERS), { Referer: MAIN_URL }) }, 1e4);
-        const html = yield response.text();
-        const m3u8Match = html.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/i);
+        const html2 = yield response.text();
+        const m3u8Match = html2.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/i);
         if (m3u8Match)
           return m3u8Match[0].replace(/&#038;/g, "&");
-        const mp4Match = html.match(/https?:\/\/[^\s"']+\.mp4[^\s"']*/i);
+        const mp4Match = html2.match(/https?:\/\/[^\s"']+\.mp4[^\s"']*/i);
         if (mp4Match)
           return mp4Match[0].replace(/&#038;/g, "&");
       }
