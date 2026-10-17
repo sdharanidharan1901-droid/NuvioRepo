@@ -338,27 +338,43 @@ async function getToonStreamEpisodes(seriesUrl, episodeNumber) {
         let epLink = null;
 
         const epPadded = episodeNumber.toString().padStart(2, '0');
-        const epRegex = new RegExp(`(?:Episode|Ep)\\s*(${episodeNumber}|${epPadded})\\b`, 'i');
+        const epNum = Number(episodeNumber);
 
-        $('article.post.episodes').each((i, el) => {
-            const text = $(el).text();
-            if (epRegex.test(text)) {
-                epLink = $(el).find('a.lnk-blk').attr('href');
-                return false; // break
-            }
-        });
+const epRegex = new RegExp(
+    `(?:Episode|Ep|E)\\s*0*${epNum}\\b`,
+    'i'
+);
 
-        if (!epLink) {
-            // Fallback: check all links for /episode/ and the number
-            $('a[href*="/episode/"]').each((i, a) => {
-                const href = $(a).attr('href');
-                if (href.includes(`-${episodeNumber}/`) || href.includes(`-ep-${episodeNumber}/`) || href.endsWith(`-${episodeNumber}`) || href.endsWith(`-ep-${episodeNumber}`)) {
-                    epLink = href;
-                    return false;
-                }
-            });
+$('article.post.episodes, article.post, li, .episodes a').each((i, el) => {
+    const text = $(el).text().trim();
+
+    if (epRegex.test(text)) {
+        const link = $(el).find('a.lnk-blk, a[href*="/episode/"]').first();
+        const href = link.attr('href') || $(el).attr('href');
+
+        if (href && /\/episode\//i.test(href)) {
+            epLink = href;
+            return false;
         }
+    }
+});
 
+if (!epLink) {
+    $('a[href*="/episode/"]').each((i, a) => {
+        const href = $(a).attr('href') || '';
+        const text = $(a).text().trim();
+        const match = href.match(/episode.*?(?:-ep-|-episode-|-)(\d+)\/?$/i);
+        const textMatch = text.match(/(?:Episode|Ep)\s*0*(\d+)/i);
+
+        if (
+            (match && Number(match[1]) === epNum) ||
+            (textMatch && Number(textMatch[1]) === epNum)
+        ) {
+            epLink = href;
+            return false;
+        }
+    });
+}
         return epLink;
     } catch (error) {
         console.error("[ToonHub] ToonStream episode fetch error:", error.message);
