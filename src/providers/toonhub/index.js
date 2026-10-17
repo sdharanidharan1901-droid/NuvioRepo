@@ -328,59 +328,62 @@ async function searchToonStream(query) {
 }
 
 async function getToonStreamEpisodes(seriesUrl, episodeNumber) {
-    console.log(`[ToonHub] Getting episode ${episodeNumber} from ToonStream: ${seriesUrl}`);
+    console.log(`[ToonHub] Getting episode ${episodeNumber}: ${seriesUrl}`);
+
     try {
-        const response = await fetchWithTimeout(seriesUrl, { headers: HEADERS }, 10000);
+        const response = await fetchWithTimeout(
+            seriesUrl,
+            { headers: HEADERS },
+            10000
+        );
+
         if (!response.ok) return null;
 
         const html = await response.text();
         const $ = cheerio.load(html);
+
+        const targetEpisode = Number(episodeNumber);
+        if (!Number.isInteger(targetEpisode) || targetEpisode < 1) {
+            return null;
+        }
+
         let epLink = null;
 
-        const epPadded = episodeNumber.toString().padStart(2, '0');
-        const epNum = Number(episodeNumber);
+        $('article.post.episodes, article.post, a[href*="/episode/"]').each(
+            (i, el) => {
+                const element = $(el);
+                const link = element.is('a')
+                    ? element
+                    : element.find('a[href*="/episode/"]').first();
 
-const epRegex = new RegExp(
-    `(?:Episode|Ep|E)\\s*0*${epNum}\\b`,
-    'i'
-);
+                const href = link.attr('href');
+                const text = `${element.text()} ${href || ''}`;
 
-$('article.post.episodes, article.post, li, .episodes a').each((i, el) => {
-    const text = $(el).text().trim();
+                const match = text.match(
+                    /(?:episode|ep)[\s-]*0*(\d+)\b/i
+                );
 
-    if (epRegex.test(text)) {
-        const link = $(el).find('a.lnk-blk, a[href*="/episode/"]').first();
-        const href = link.attr('href') || $(el).attr('href');
+                if (
+                    href &&
+                    match &&
+                    Number(match[1]) === targetEpisode &&
+                    /\/episode\//i.test(href)
+                ) {
+                    epLink = href;
+                    return false;
+                }
+            }
+        );
 
-        if (href && /\/episode\//i.test(href)) {
-            epLink = href;
-            return false;
-        }
-    }
-});
-
-if (!epLink) {
-    $('a[href*="/episode/"]').each((i, a) => {
-        const href = $(a).attr('href') || '';
-        const text = $(a).text().trim();
-        const match = href.match(/episode.*?(?:-ep-|-episode-|-)(\d+)\/?$/i);
-        const textMatch = text.match(/(?:Episode|Ep)\s*0*(\d+)/i);
-
-        if (
-            (match && Number(match[1]) === epNum) ||
-            (textMatch && Number(textMatch[1]) === epNum)
-        ) {
-            epLink = href;
-            return false;
-        }
-    });
-}
+        console.log(`[ToonHub] Episode link: ${epLink || 'Not found'}`);
         return epLink;
     } catch (error) {
-        console.error("[ToonHub] ToonStream episode fetch error:", error.message);
+        console.error('[ToonHub] Episode lookup failed:', error.message);
         return null;
     }
 }
+        
+    
 
 async function extractDirectStream(url) {
     console.log(`[ToonHub] Extracting direct stream from: ${url}`);
