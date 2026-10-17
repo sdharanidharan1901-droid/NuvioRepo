@@ -1,6 +1,6 @@
 /**
  * toonhub - Built from src/toonhub/
- * Generated: 2026-10-17T15:42:05.506Z
+ * Generated: 2026-10-17T16:22:05.775Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -85,15 +85,6 @@ function checkLink(_0) {
       return false;
     }
   });
-}
-function decodeBase64(b64) {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(b64, "base64").toString("utf8");
-  }
-  if (typeof atob !== "undefined") {
-    return atob(b64);
-  }
-  throw new Error("No base64 decoder available");
 }
 function normalizeTitle(title) {
   if (!title)
@@ -406,7 +397,7 @@ function extractDirectStream(url) {
       if (finalUrl.includes("redirect/main") && finalUrl.includes(".php?url=")) {
         const b64 = finalUrl.split("url=")[1].split("&")[0];
         try {
-          finalUrl = decodeBase64(decodeURIComponent(b64));
+          finalUrl = Buffer.from(b64, "base64").toString("utf8");
           console.log(`[ToonHub] Decoded redirect URL: ${finalUrl}`);
         } catch (e) {
           console.log("[ToonHub] Base64 decode failed for URL");
@@ -418,27 +409,20 @@ function extractDirectStream(url) {
         const html = yield response.text();
         const trembedMatch = html.match(/https?:\/\/toonstream\.[^/]+\/home\/\?trembed=[^"']+/i);
         if (trembedMatch) {
-          finalUrl = trembedMatch[0].replace(/&#038;|&amp;/g, "&");
+          finalUrl = trembedMatch[0].replace(/&#038;/g, "&");
           console.log(`[ToonHub] Found Embed URL: ${finalUrl}`);
         }
       }
       if (finalUrl.includes("toonstream.") && finalUrl.includes("trembed=")) {
-        console.log(`[ToonHub] Resolving ToonStream embed page: ${finalUrl}`);
-        const embedResponse = yield fetchWithTimeout(
-          finalUrl,
-          { headers: __spreadProps(__spreadValues({}, HEADERS), { "Referer": "https://toonstream.one/" }) },
-          1e4
-        );
-        const embedHtml = yield embedResponse.text();
-        const $embed = cheerio.load(embedHtml);
-        const iframeSrc = $embed("iframe[src], iframe[data-src]").map((i, el) => $embed(el).attr("src") || $embed(el).attr("data-src")).get().find(
+        const embedResponse = yield fetchWithTimeout(finalUrl, { headers: __spreadProps(__spreadValues({}, HEADERS), { "Referer": "https://toonstream.one/" }) }, 1e4);
+        const html = yield embedResponse.text();
+        const $ = cheerio.load(html);
+        const iframeMatch = $("iframe[src]").map((i, el) => $(el).attr("src")).get().find(
           (src) => src && /short\.icu|as-cdn21\.top|abyss\.to|gdmirrorbot\.nl/i.test(src)
         );
-        if (iframeSrc) {
-          finalUrl = new URL(iframeSrc, finalUrl).href;
+        if (iframeMatch) {
+          finalUrl = new URL(iframeMatch, finalUrl).href;
           console.log(`[ToonHub] Found video host: ${finalUrl}`);
-        } else {
-          console.warn("[ToonHub] No video host iframe found on embed page");
         }
       }
       if (finalUrl.includes("short.icu") || finalUrl.includes("as-cdn21.top") || finalUrl.includes("abyss.to")) {
@@ -510,14 +494,10 @@ function extractDirectStream(url) {
         if (mp4Match)
           return mp4Match[0].replace(/&#038;/g, "&");
       }
-      if (/\.(m3u8|mp4|mkv)(\?|$)/i.test(finalUrl) || finalUrl.includes("name=")) {
-        return finalUrl;
-      }
-      console.warn(`[ToonHub] Not a playable video URL, skipping: ${finalUrl}`);
-      return null;
+      return finalUrl;
     } catch (error) {
       console.error(`[ToonHub] Extraction failed for ${url}:`, error.message);
-      return null;
+      return url;
     }
   });
 }
@@ -656,11 +636,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         console.log(`[ToonHub] Adding ToonStream result as additional candidate: ${tsBestMatch.title}`);
         let tsEpisodeUrl = tsBestMatch.type === "episode" ? tsBestMatch.href : yield getToonStreamEpisodes(tsBestMatch.href, episode || 1);
         if (tsEpisodeUrl) {
-          streams.push({
-            url: tsEpisodeUrl,
-            quality: "HD",
-            label: episode ? `Episode ${episode}` : void 0
-          });
+          streams.push({ url: tsEpisodeUrl, quality: "HD", label: `Episode ${episode}` });
         }
       }
       streams.sort((a, b) => {
@@ -680,6 +656,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       let matchingStreamsCount = 0;
       const concurrencyLimit = 10;
       const targetResults = 5;
+      const streamTasks = [];
       const processStream = (stream) => __async(this, null, function* () {
         if (seenUrls.has(stream.url) || matchingStreamsCount >= targetResults)
           return null;
@@ -718,8 +695,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
               headers: { "Referer": MAIN_URL, "User-Agent": HEADERS["User-Agent"] },
               provider: "ToonHub"
             };
-            const isHls = /\.m3u8/i.test(finalUrl);
-            const isWorking = isHls ? true : yield checkLink(streamObj.url, streamObj.headers);
+            const isWorking = yield checkLink(streamObj.url, streamObj.headers);
             if (isWorking && matchingStreamsCount < targetResults) {
               matchingStreamsCount++;
               return streamObj;
