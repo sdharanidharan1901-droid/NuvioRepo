@@ -417,13 +417,8 @@ async function extractDirectStream(url) {
         }
 
         // 2. Resolve ToonStream Embed Page to Host Page
-        if (finalUrl.includes('toonstream.') && finalUrl.includes('/home/')) {
-            console.log(`[ToonHub] Resolving ToonStream embed: ${finalUrl}`);
-            const response = await fetchWithTimeout(finalUrl, { headers: HEADERS }, 10000);
-            const html = await response.text();
-
-            // Find internal host iframe (usually behind the fake-player-overlay)
-            const $ = cheerio.load(html);
+        // Find internal video host iframe
+const $ = cheerio.load(html);
 
 const iframeMatch = $('iframe[src]')
     .map((i, el) => $(el).attr('src'))
@@ -437,12 +432,6 @@ if (iframeMatch) {
     finalUrl = new URL(iframeMatch, finalUrl).href;
     console.log(`[ToonHub] Found video host: ${finalUrl}`);
 }
-            if (iframeMatch && iframeMatch[1]) {
-                finalUrl = iframeMatch[1].replace(/&#038;/g, '&');
-                console.log(`[ToonHub] Found internal host: ${finalUrl}`);
-            }
-        }
-
         // 3. Resolve Host API (as-cdn, abyss, etc.) to Final Stream
         if (finalUrl.includes('short.icu') || finalUrl.includes('as-cdn21.top') || finalUrl.includes('abyss.to')) {
             console.log(`[ToonHub] Extracting via Host API: ${finalUrl}`);
