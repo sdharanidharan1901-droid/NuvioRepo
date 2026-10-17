@@ -45,6 +45,17 @@ async function checkLink(url, headers = {}) {
     }
 }
 
+// Works in Node (Buffer) and in React Native (atob)
+function decodeBase64(b64) {
+    if (typeof Buffer !== 'undefined') {
+        return Buffer.from(b64, 'base64').toString('utf8');
+    }
+    if (typeof atob !== 'undefined') {
+        return atob(b64);
+    }
+    throw new Error('No base64 decoder available');
+}
+
 function normalizeTitle(title) {
     if (!title) return '';
     return title.toLowerCase()
@@ -382,8 +393,6 @@ async function getToonStreamEpisodes(seriesUrl, episodeNumber) {
         return null;
     }
 }
-        
-    
 
 async function extractDirectStream(url) {
     console.log(`[ToonHub] Extracting direct stream from: ${url}`);
@@ -394,8 +403,7 @@ async function extractDirectStream(url) {
         if (finalUrl.includes('redirect/main') && finalUrl.includes('.php?url=')) {
             const b64 = finalUrl.split('url=')[1].split('&')[0];
             try {
-                // Buffer is available in Node.js and bundled environments
-                finalUrl = Buffer.from(b64, 'base64').toString('utf8');
+                finalUrl = decodeBase64(decodeURIComponent(b64));
                 console.log(`[ToonHub] Decoded redirect URL: ${finalUrl}`);
             } catch (e) {
                 console.log("[ToonHub] Base64 decode failed for URL");
@@ -411,27 +419,39 @@ async function extractDirectStream(url) {
             // Search for embed iframe src (trembed=...)
             const trembedMatch = html.match(/https?:\/\/toonstream\.[^/]+\/home\/\?trembed=[^"']+/i);
             if (trembedMatch) {
-                finalUrl = trembedMatch[0].replace(/&#038;/g, '&');
+                finalUrl = trembedMatch[0].replace(/&#038;|&amp;/g, '&');
                 console.log(`[ToonHub] Found Embed URL: ${finalUrl}`);
             }
         }
 
         // 2. Resolve ToonStream Embed Page to Host Page
-        // Find internal video host iframe
-const $ = cheerio.load(html);
+        // (this is the part that was broken before: it used a variable that didn't exist here)
+        if (finalUrl.includes('toonstream.') && finalUrl.includes('trembed=')) {
+            console.log(`[ToonHub] Resolving ToonStream embed page: ${finalUrl}`);
+            const embedResponse = await fetchWithTimeout(
+                finalUrl,
+                { headers: { ...HEADERS, 'Referer': 'https://toonstream.one/' } },
+                10000
+            );
+            const embedHtml = await embedResponse.text();
+            const $embed = cheerio.load(embedHtml);
 
-const iframeMatch = $('iframe[src]')
-    .map((i, el) => $(el).attr('src'))
-    .get()
-    .find(src =>
-        src &&
-        /short\.icu|as-cdn21\.top|abyss\.to|gdmirrorbot\.nl/i.test(src)
-    );
+            const iframeSrc = $embed('iframe[src], iframe[data-src]')
+                .map((i, el) => $embed(el).attr('src') || $embed(el).attr('data-src'))
+                .get()
+                .find(src =>
+                    src &&
+                    /short\.icu|as-cdn21\.top|abyss\.to|gdmirrorbot\.nl/i.test(src)
+                );
 
-if (iframeMatch) {
-    finalUrl = new URL(iframeMatch, finalUrl).href;
-    console.log(`[ToonHub] Found video host: ${finalUrl}`);
-}
+            if (iframeSrc) {
+                finalUrl = new URL(iframeSrc, finalUrl).href;
+                console.log(`[ToonHub] Found video host: ${finalUrl}`);
+            } else {
+                console.warn('[ToonHub] No video host iframe found on embed page');
+            }
+        }
+
         // 3. Resolve Host API (as-cdn, abyss, etc.) to Final Stream
         if (finalUrl.includes('short.icu') || finalUrl.includes('as-cdn21.top') || finalUrl.includes('abyss.to')) {
             console.log(`[ToonHub] Extracting via Host API: ${finalUrl}`);
@@ -518,10 +538,17 @@ if (iframeMatch) {
             if (mp4Match) return mp4Match[0].replace(/&#038;/g, '&');
         }
 
-        return finalUrl;
+        // Only return the URL if it really looks like a video file.
+        // Otherwise it's just a web page and the player would show an error / keep loading.
+        if (/\.(m3u8|mp4|mkv)(\?|$)/i.test(finalUrl) || finalUrl.includes('name=')) {
+            return finalUrl;
+        }
+
+        console.warn(`[ToonHub] Not a playable video URL, skipping: ${finalUrl}`);
+        return null;
     } catch (error) {
         console.error(`[ToonHub] Extraction failed for ${url}:`, error.message);
-        return url;
+        return null;
     }
 }
 
@@ -681,7 +708,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
             console.log(`[ToonHub] Adding ToonStream result as additional candidate: ${tsBestMatch.title}`);
             let tsEpisodeUrl = tsBestMatch.type === 'episode' ? tsBestMatch.href : await getToonStreamEpisodes(tsBestMatch.href, episode || 1);
             if (tsEpisodeUrl) {
-                streams.push({ url: tsEpisodeUrl, quality: 'HD', label: `Episode ${episode}` });
+                streams.push({
+                    url: tsEpisodeUrl,
+                    quality: 'HD',
+                    label: episode ? `Episode ${episode}` : undefined
+                });
             }
         }
 
@@ -704,7 +735,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         // --- Optimization: Fast Parallel Pool ---
         const concurrencyLimit = 10;
         const targetResults = 5;
-        const streamTasks = [];
 
         // Helper to process a single stream
         const processStream = async (stream) => {
@@ -750,7 +780,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
                         provider: 'ToonHub'
                     };
 
-                    const isWorking = await checkLink(streamObj.url, streamObj.headers);
+                    // HLS (.m3u8) links often reject the small "Range" test request even when they play fine,
+                    // so we trust them. Other links still get checked.
+                    const isHls = /\.m3u8/i.test(finalUrl);
+                    const isWorking = isHls ? true : await checkLink(streamObj.url, streamObj.headers);
                     if (isWorking && matchingStreamsCount < targetResults) {
                         matchingStreamsCount++;
                         return streamObj;
